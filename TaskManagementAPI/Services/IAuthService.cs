@@ -5,5 +5,6 @@ namespace TaskManagementAPI.Services
     public interface IAuthService
     {
         Task<UserResponseDto> RegisterAsync(RegisterDto registerDto);
+        Task<LoginResponseDto> LoginAsync(LoginDto loginDto);
     }
 }
