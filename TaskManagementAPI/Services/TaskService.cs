@@ -89,5 +89,108 @@ namespace TaskManagementAPI.Services
             return task;
         }
 
+        public async Task<TaskResponseDto?> UpdateTaskAsync(int taskId, UpdateTaskDto updateTaskDto, int userId)
+        {
+            // Find the task and verify ownership
+            var task = await _context.Tasks
+                .FirstOrDefaultAsync(t => t.Id == taskId && t.UserId == userId);
+
+            if (task == null)
+            {
+                return null; // Task not found or user doesn't own it
+            }
+
+            // Update only the fields that were provided (not null)
+            if (updateTaskDto.Title != null)
+            {
+                task.Title = updateTaskDto.Title;
+            }
+
+            if (updateTaskDto.Description != null)
+            {
+                task.Description = updateTaskDto.Description;
+            }
+
+            if (updateTaskDto.IsCompleted.HasValue)
+            {
+                task.IsCompleted = updateTaskDto.IsCompleted.Value;
+            }
+
+            if (updateTaskDto.Priority.HasValue)
+            {
+                task.Priority = updateTaskDto.Priority.Value;
+            }
+
+            if (updateTaskDto.DueDate.HasValue)
+            {
+                task.DueDate = updateTaskDto.DueDate;
+            }
+
+            // Save changes
+            await _context.SaveChangesAsync();
+
+            // Return updated task
+            return new TaskResponseDto
+            {
+                Id = task.Id,
+                Title = task.Title,
+                Description = task.Description,
+                IsCompleted = task.IsCompleted,
+                Priority = task.Priority,
+                DueDate = task.DueDate,
+                CreatedAt = task.CreatedAt,
+                UserId = task.UserId
+            };
+        }
+
+        public async Task<bool> DeleteTaskAsync(int taskId, int userId)
+        {
+            // Find the task and verify ownership
+            var task = await _context.Tasks
+                .FirstOrDefaultAsync(t => t.Id == taskId && t.UserId == userId);
+
+            if (task == null)
+            {
+                return false; // Task not found or user doesn't own it
+            }
+
+            // Remove the task
+            _context.Tasks.Remove(task);
+            await _context.SaveChangesAsync();
+
+            return true;
+        }
+
+        public async Task<TaskResponseDto?> ToggleTaskCompletionAsync(int taskId, int userId)
+        {
+            // Find the task and verify ownership
+            var task = await _context.Tasks
+                .FirstOrDefaultAsync(t => t.Id == taskId && t.UserId == userId);
+
+            if (task == null)
+            {
+                return null;
+            }
+
+            // Toggle the completion status
+            task.IsCompleted = !task.IsCompleted;
+
+            // Save changes
+            await _context.SaveChangesAsync();
+
+            // Return updated task
+            return new TaskResponseDto
+            {
+                Id = task.Id,
+                Title = task.Title,
+                Description = task.Description,
+                IsCompleted = task.IsCompleted,
+                Priority = task.Priority,
+                DueDate = task.DueDate,
+                CreatedAt = task.CreatedAt,
+                UserId = task.UserId
+            };
+        }
+
     }
 }

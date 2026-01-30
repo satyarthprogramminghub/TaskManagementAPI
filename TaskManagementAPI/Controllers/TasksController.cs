@@ -94,6 +94,81 @@ namespace TaskManagementAPI.Controllers
             }
         }
 
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateTask(int id, [FromBody] UpdateTaskDto updateTaskDto)
+        {
+            try
+            {
+                var userId = User.GetUserId();
+                var task = await _taskService.UpdateTaskAsync(id, updateTaskDto, userId);
+
+                if (task == null)
+                {
+                    return NotFound(new { message = "Task not found or you don't have permission to update it" });
+                }
+
+                return Ok(task);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred while updating the task", details = ex.Message });
+            }
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteTask(int id)
+        {
+            try
+            {
+                var userId = User.GetUserId();
+                var success = await _taskService.DeleteTaskAsync(id, userId);
+
+                if (!success)
+                {
+                    return NotFound(new { message = "Task not found or you don't have permission to delete it" });
+                }
+
+                return NoContent();
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred while deleting the task", details = ex.Message });
+            }
+        }
+
+        [HttpPatch("{id}/toggle")]
+        public async Task<IActionResult> ToggleTaskCompletion(int id)
+        {
+            try
+            {
+                var userId = User.GetUserId();
+                var task = await _taskService.ToggleTaskCompletionAsync(id, userId);
+
+                if (task == null)
+                {
+                    return NotFound(new { message = "Task not found or you don't have permission to modify it" });
+                }
+
+                return Ok(task);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred while toggling task completion", details = ex.Message });
+            }
+        }
+
 
 
 
