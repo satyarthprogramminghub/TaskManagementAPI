@@ -8,6 +8,10 @@
         public string PasswordHash { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+        // Role relationship
+        public int RoleId { get; set; }  // Foreign key
+        public Role Role { get; set; } = null!;  // Navigation property
+
         // Navigation property
         public ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
     }

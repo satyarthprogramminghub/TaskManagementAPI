@@ -15,5 +15,8 @@ namespace TaskManagementAPI.DTOs
         [Required(ErrorMessage = "Password is required")]
         [StringLength(100, MinimumLength = 6, ErrorMessage = "Password must be at least 6 characters")]
         public string Password { get; set; } = string.Empty;
+
+        // Optional: Allow role selection during registration (for admin use)
+        public string? Role { get; set; }  // Will default to "User" if not provided
     }
 }

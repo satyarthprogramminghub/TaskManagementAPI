@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using TaskManagementAPI.Constants;
 using TaskManagementAPI.Data;
 using TaskManagementAPI.Services;
 
@@ -42,6 +43,23 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(
             Encoding.UTF8.GetBytes(builder.Configuration["JwtSettings:SecretKey"]!))
     };
+});
+
+// Configure Authorization Policies
+builder.Services.AddAuthorization(options =>
+{
+    // Admin-only policy
+    options.AddPolicy("AdminOnly", policy =>
+        policy.RequireRole(RoleConstants.Admin));
+
+    // Manager or Admin policy
+    options.AddPolicy("ManagerOrAdmin", policy =>
+        policy.RequireRole(RoleConstants.Manager, RoleConstants.Admin));
+
+    // Any authenticated user (User, Manager, or Admin)
+    options.AddPolicy("AuthenticatedUser", policy =>
+        policy.RequireAuthenticatedUser());
+
 });
 
 

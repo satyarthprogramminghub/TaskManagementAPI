@@ -13,7 +13,7 @@ namespace TaskManagementAPI.Services
             _context = context;
         }
 
-        public async Task<TaskResponseDto> CreateTaskAsync(CreateTaskDto createTaskDto, int userId) 
+        public async Task<TaskResponseDto> CreateTaskAsync(CreateTaskDto createTaskDto, int userId)
         {
             // Create new task entity
             var task = new TaskItem
@@ -46,7 +46,7 @@ namespace TaskManagementAPI.Services
 
         }
 
-        public async Task<List<TaskResponseDto>> GetUserTasksAsync(int userId) 
+        public async Task<List<TaskResponseDto>> GetUserTasksAsync(int userId)
         {
             // Get all tasks for this user, ordered by creation date (newest first)
             var tasks = await _context.Tasks
@@ -68,7 +68,7 @@ namespace TaskManagementAPI.Services
             return tasks;
         }
 
-        public async Task<TaskResponseDto?> GetTaskByIdAsync(int taskId, int userId) 
+        public async Task<TaskResponseDto?> GetTaskByIdAsync(int taskId, int userId)
         {
             // Find task by ID and ensure it belongs to the user
             var task = await _context.Tasks
@@ -190,6 +190,112 @@ namespace TaskManagementAPI.Services
                 CreatedAt = task.CreatedAt,
                 UserId = task.UserId
             };
+        }
+
+        public async Task<List<TaskResponseDto>> GetAllTasksAsync()
+        {
+            var tasks = await _context.Tasks
+                .OrderByDescending(t => t.CreatedAt)
+                .Select(t => new TaskResponseDto
+                {
+                    Id = t.Id,
+                    Title = t.Title,
+                    Description = t.Description,
+                    IsCompleted = t.IsCompleted,
+                    Priority = t.Priority,
+                    DueDate = t.DueDate,
+                    CreatedAt = t.CreatedAt,
+                    UserId = t.UserId
+                }).ToListAsync();
+
+            return tasks;
+        }
+
+        public async Task<TaskResponseDto?> GetAnyTaskByIdAsync(int taskId) 
+        {
+            var task = await _context.Tasks
+                .Where(t => t.Id == taskId)
+                .Select(t => new TaskResponseDto
+                {
+                    Id = t.Id,
+                    Title = t.Title,
+                    Description = t.Description,
+                    IsCompleted = t.IsCompleted,
+                    Priority = t.Priority,
+                    DueDate = t.DueDate,
+                    CreatedAt = t.CreatedAt,
+                    UserId = t.UserId
+                }).FirstOrDefaultAsync();
+
+            return task;
+        }
+
+        public async Task<TaskResponseDto?> UpdateAnyTaskAsync(int taskId, UpdateTaskDto updateTaskDto) 
+        {
+            // Find the task WITHOUT filtering by userId
+            var task = await _context.Tasks
+                .FirstOrDefaultAsync(t => t.Id == taskId);
+
+            if (task == null)
+            {
+                return null;
+            }
+
+            // Update fields
+            if (updateTaskDto.Title != null)
+            {
+                task.Title = updateTaskDto.Title;
+            }
+
+            if (updateTaskDto.Description != null)
+            {
+                task.Description = updateTaskDto.Description;
+            }
+
+            if (updateTaskDto.IsCompleted.HasValue)
+            {
+                task.IsCompleted = updateTaskDto.IsCompleted.Value;
+            }
+
+            if (updateTaskDto.Priority.HasValue)
+            {
+                task.Priority = updateTaskDto.Priority.Value;
+            }
+
+            if (updateTaskDto.DueDate.HasValue)
+            {
+                task.DueDate = updateTaskDto.DueDate;
+            }
+
+            await _context.SaveChangesAsync();
+
+            return new TaskResponseDto
+            {
+                Id = task.Id,
+                Title = task.Title,
+                Description = task.Description,
+                IsCompleted = task.IsCompleted,
+                Priority = task.Priority,
+                DueDate = task.DueDate,
+                CreatedAt = task.CreatedAt,
+                UserId = task.UserId
+            };
+        }
+
+        public async Task<bool> DeleteAnyTaskAsync(int taskId) 
+        {
+            var task = await _context.Tasks
+        .FirstOrDefaultAsync(t => t.Id == taskId);
+
+            if (task == null)
+            {
+                return false;
+            }
+
+            _context.Tasks.Remove(task);
+            await _context.SaveChangesAsync();
+
+            return true;
         }
 
     }
