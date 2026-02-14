@@ -13,6 +13,8 @@ namespace TaskManagementAPI.Data
         public DbSet<TaskItem> Tasks { get; set; }
         public DbSet<Role> Roles { get; set; }  // New DbSet
 
+        public DbSet<RefreshToken> RefreshTokens { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -43,6 +45,11 @@ namespace TaskManagementAPI.Data
             modelBuilder.Entity<Role>()
                 .HasIndex(r => r.Name)
                 .IsUnique();  // Role names must be unique
+
+            // Index on refresh token for fast lookup (NEW)
+            modelBuilder.Entity<RefreshToken>()
+                .HasIndex(rt => rt.Token)
+                .IsUnique();
 
             // Seed default roles
             modelBuilder.Entity<Role>().HasData(
