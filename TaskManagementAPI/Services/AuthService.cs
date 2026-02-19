@@ -9,16 +9,30 @@ using TaskManagementAPI.Constants;
 using TaskManagementAPI.Data;
 using TaskManagementAPI.DTOs;
 using TaskManagementAPI.Models;
+using TaskManagementAPI.Repositories;
 
 namespace TaskManagementAPI.Services
 {
     public class AuthService : IAuthService
     {
+        // Repositories replace direct DbContext usage
+        // UserRepository    → all user-related DB operations
+        // RefreshTokenRepository → all token-related DB operations
+        // _context kept only for role lookup (no RoleRepository in this implementation)
+
+        private readonly IUserRepository _userRepository;
+        private readonly IRefreshTokenRepository _refreshTokenRepository;
         private readonly ApplicationDbContext _context;
         private readonly IConfiguration _configuration;
 
-        public AuthService(ApplicationDbContext context, IConfiguration configuration)
+        public AuthService(
+            IUserRepository userRepository,
+            IRefreshTokenRepository refreshTokenRepository,
+            ApplicationDbContext context,
+            IConfiguration configuration)
         {
+            _userRepository = userRepository;
+            _refreshTokenRepository = refreshTokenRepository;
             _context = context;
             _configuration = configuration;
         }
@@ -31,9 +45,9 @@ namespace TaskManagementAPI.Services
         public async Task<LoginResponseDto> LoginAsync(LoginDto loginDto,string ipAddress) 
         {
             // Find user by email
-            var user = await _context.Users
-                .Include(u => u.Role)  // Eager load the role
-                .FirstOrDefaultAsync(u => u.Email == loginDto.Email);
+            // UserRepository.GetByEmailAsync()
+            // ↑ Uses base.FirstOrDefaultAsync() with Role eagerly loaded
+            var user = await _userRepository.GetByEmailAsync(loginDto.Email);
 
             // Check if user exists
             if (user == null)
@@ -55,12 +69,17 @@ namespace TaskManagementAPI.Services
 
             // Save refresh token to database
             refreshToken.UserId = user.Id;
-            _context.RefreshTokens.Add(refreshToken);
+
+            // Uses base generic AddAsync() from Repository<RefreshToken>
+            await _refreshTokenRepository.AddAsync(refreshToken);
 
             // Remove old/inactive refresh tokens for this user (optional cleanup)
-            await RemoveOldRefreshTokens(user.Id);
+            // RefreshTokenRepository.RemoveOldTokensAsync()
+            // ↑ Uses base.RemoveRange() internally for cleanup
+            await _refreshTokenRepository.RemoveOldTokensAsync(user.Id);
 
-            await _context.SaveChangesAsync();
+            // Uses base generic SaveChangesAsync() from Repository<RefreshToken>
+            await _refreshTokenRepository.SaveChangesAsync();
 
             var accessTokenExpiry = DateTime.UtcNow.AddMinutes(
                 double.Parse(_configuration["JwtSettings:AccessTokenExpiryMinutes"]!));
@@ -85,27 +104,32 @@ namespace TaskManagementAPI.Services
 
         public async Task<UserResponseDto> RegisterWithRoleAsync(RegisterDto registerDto, string roleName) 
         {
-            // Check if user already exists
-            var existingUser = await _context.Users
-                .FirstOrDefaultAsync(u => u.Email == registerDto.Email ||
-                                         u.Username == registerDto.Username);
-
-            if (existingUser != null)
+            // UserRepository.EmailExistsAsync()
+            // ↑ Uses base.AnyAsync() internally
+            if (await _userRepository.EmailExistsAsync(registerDto.Email))
             {
-                throw new InvalidOperationException("User with this email or username already exists");
+                throw new InvalidOperationException(
+                    "User with this email already exists");
             }
 
-            // Get the role
-            var role = await _context.Roles.FirstOrDefaultAsync(r => r.Name == registerDto.Role);
-            if (role == null) 
+            // UserRepository.UsernameExistsAsync()
+            // ↑ Uses base.AnyAsync() internally
+            if (await _userRepository.UsernameExistsAsync(registerDto.Username))
             {
-                // Default to User role if specified role doesn't exist
-                role = await _context.Roles.FirstOrDefaultAsync(r => r.Name == RoleConstants.User);
-                if (role == null)
-                {
-                    throw new InvalidOperationException("Default user role not found. Please ensure roles are seeded.");
-                }
+                throw new InvalidOperationException(
+                    "User with this username already exists");
             }
+
+
+
+            // Role lookup still uses _context directly
+            // We don't have a RoleRepository - it's a simple lookup
+            var role = await _context.Roles
+                .FirstOrDefaultAsync(r => r.Name == roleName)
+                ?? await _context.Roles
+                    .FirstOrDefaultAsync(r => r.Name == RoleConstants.User)
+                ?? throw new InvalidOperationException(
+                    "Default user role not found. Please ensure roles are seeded.");
 
             // Hash the password
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(registerDto.Password);
@@ -121,26 +145,42 @@ namespace TaskManagementAPI.Services
             };
 
             // Add to database
-            _context.Users.Add(user);
-            await _context.SaveChangesAsync();
+
+            // Uses base generic AddAsync() from Repository<User>
+            await _userRepository.AddAsync(user);
+
+            // Uses base generic SaveChangesAsync() from Repository<User>
+            await _userRepository.SaveChangesAsync();
+
+
 
             // Load the role navigation property
-            await _context.Entry(user).Reference(u => u.Role).LoadAsync();
+            // UserRepository.GetUserWithRoleAsync()
+            // ↑ Uses base.FirstOrDefaultAsync() with Role included
+            var userWithRole = await _userRepository.GetUserWithRoleAsync(user.Id);
 
             // Return response DTO
             return new UserResponseDto
             {
-                Id = user.Id,
-                Username = user.Username,
-                Email = user.Email,
-                CreatedAt = user.CreatedAt,
-                Role = user.Role.Name  // Include role name
+                Id = userWithRole!.Id,
+                Username = userWithRole.Username,
+                Email = userWithRole.Email,
+                CreatedAt = userWithRole.CreatedAt,
+                Role = userWithRole.Role.Name  // Include role name
             };
         }
 
         public async Task<RefreshTokenResponseDto> RefreshTokenAsync(string token, string ipAddress) 
         {
-            var user = await GetUserByRefreshToken(token);
+            // UserRepository.GetUserWithRefreshTokensAsync()
+            // ↑ Custom query - needs User + Role + RefreshTokens loaded
+            var user = await _userRepository.GetUserWithRefreshTokensAsync(token);
+
+            if (user == null)
+            {
+                throw new UnauthorizedAccessException("Invalid refresh token");
+            }
+
             var refreshToken = user.RefreshTokens.Single(rt => rt.Token == token);
 
             if (!refreshToken.IsActive)
@@ -158,13 +198,20 @@ namespace TaskManagementAPI.Services
             refreshToken.RevokedByIp = ipAddress;
             refreshToken.ReplacedByToken = newRefreshToken.Token;
 
+            // Uses base generic Update() from Repository<RefreshToken>
+            _refreshTokenRepository.Update(refreshToken);
+
             // Save new refresh token
-            _context.RefreshTokens.Add(newRefreshToken);
+            // Uses base generic AddAsync() from Repository<RefreshToken>
+            await _refreshTokenRepository.AddAsync(newRefreshToken);
 
             // Remove old refresh tokens
-            await RemoveOldRefreshTokens(user.Id);
+            // RefreshTokenRepository.RemoveOldTokensAsync()
+            // ↑ Uses base.RemoveRange() internally for cleanup
+            await _refreshTokenRepository.RemoveOldTokensAsync(user.Id);
 
-            await _context.SaveChangesAsync();
+            // Uses base generic SaveChangesAsync() from Repository<RefreshToken>
+            await _refreshTokenRepository.SaveChangesAsync();
 
             var accessTokenExpiry = DateTime.UtcNow.AddMinutes(
                 double.Parse(_configuration["JwtSettings:AccessTokenExpiryMinutes"]!));
@@ -180,7 +227,15 @@ namespace TaskManagementAPI.Services
 
         public async Task<bool> RevokeTokenAsync(string token, string ipAddress) 
         {
-            var user = await GetUserByRefreshToken(token);
+            // UserRepository.GetUserWithRefreshTokensAsync()
+            // ↑ Custom query - needs User + RefreshTokens loaded
+            var user = await _userRepository.GetUserWithRefreshTokensAsync(token);
+
+            if (user == null)
+            {
+                return false;
+            }
+
             var refreshToken = user.RefreshTokens.Single(rt => rt.Token == token);
 
             if (!refreshToken.IsActive)
@@ -192,7 +247,12 @@ namespace TaskManagementAPI.Services
             refreshToken.RevokedAt = DateTime.UtcNow;
             refreshToken.RevokedByIp = ipAddress;
 
-            await _context.SaveChangesAsync();
+            // Uses base generic Update() from Repository<RefreshToken>
+            _refreshTokenRepository.Update(refreshToken);
+
+
+            // Uses base generic SaveChangesAsync() from Repository<RefreshToken>
+            await _refreshTokenRepository.SaveChangesAsync();
 
             return true;
         }
